@@ -1,23 +1,44 @@
-from threading import Thread
-import logging
-from time import sleep
+import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 
-class MyThread(Thread):
-    def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, *, daemon=None):
-        super().__init__(group=group, target=target, name=name, daemon=daemon)
-        self.args = args
-        self.kwargs = kwargs
+def copy_file(file_path, target_dir):
+    ext = file_path.suffix[1:]
+    target_path = target_dir / ext / file_path.name
 
-    def run(self) -> None:
-        sleep(2)
-        logging.debug('Wake up!')
-        logging.debug(f"args: {self.args}")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(file_path, target_path)
 
 
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG, format='%(threadName)s %(message)s')
-    for i in range(5):
-        thread = MyThread(args=(f"Count thread - {i}",))
-        thread.start()
-    print('Usefull message')
+def process_directory(source_dir, target_dir, pool):
+    futures = []
+
+    for entry in source_dir.iterdir():
+        if entry.is_dir():
+            futures.append(pool.submit(process_directory, entry, target_dir, pool))
+        elif entry.is_file():
+            futures.append(pool.submit(copy_file, entry, target_dir))
+
+    for future in as_completed(futures):
+        future.result()
+
+
+def main():
+    dirs = input('Enter path to directory with files and folder for copy file: ').split()
+
+    if dirs.count == 0:
+        print(f"Error: enter a directory with files.")
+    else:
+        source_dir = Path(dirs[0])
+        if not source_dir.is_dir():
+            print(f"Error: {source_dir} is not a directory or does not exist.")
+        else:
+            target_dir = Path(dirs[1]) if len(dirs) > 1 else Path('dist')
+
+            with ThreadPoolExecutor() as pool:
+                process_directory(source_dir, target_dir, pool)
+
+
+if __name__ == "__main__":
+    main()
